@@ -1,2 +1,1 @@
-# Test
-2 + 2
+# Start of analysis
