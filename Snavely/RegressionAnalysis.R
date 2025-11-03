@@ -1,5 +1,6 @@
 # Loading in packages
 library(tidyverse)
+library(gt)
 
 # Loading in the data
 NY <- read_csv("data/NY_AIRBNB.csv")
@@ -152,13 +153,14 @@ NY_transformed <- NY_clean |>
   mutate(lnPRICE = log(price))
 
 # Scatterplot matrix
-pairs(~calculated_host_listings_count + accommodates + bathrooms + beds + minimum_nights + number_of_reviews +
+pairs(~calculated_host_listings_count + accommodates + bathrooms + bedrooms + beds + minimum_nights + number_of_reviews +
         review_scores_rating + days_since_host_joined + lnPRICE, 
       data = NY_transformed, upper.panel = NULL, gap = 0)
 
 # Correlation
-cors <- round(cor(NY_transformed[ , c("calculated_host_listings_count", "accommodates", "bathrooms", "beds", "minimum_nights", 
-                        "number_of_reviews", "review_scores_rating", "days_since_host_joined", "lnPRICE")]),3) [9, ]
+cors <- round(cor(NY_transformed[ , c("calculated_host_listings_count", "accommodates", "bathrooms", 
+                                      "bedrooms", "beds", "minimum_nights", "number_of_reviews", "review_scores_rating",
+                                      "days_since_host_joined", "lnPRICE")]),3)[10, ]
 
 # Put in a data frame
 correlations <- data.frame(Variable = names(cors), Correlation = as.numeric(cors))
@@ -166,7 +168,8 @@ correlations <- data.frame(Variable = names(cors), Correlation = as.numeric(cors
 correlations |> 
   filter(Variable != "lnPRICE") |> 
   gt() |> 
-  tab_header(title = md("**Correlations with lnPRICE**"))
+  tab_header(title = md("**Correlations with lnPRICE**")) |> 
+  gtsave("Correlations.png")
 
 # Categorical Variable Analysis
 NY_transformed |> 
