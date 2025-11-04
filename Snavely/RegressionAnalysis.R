@@ -21,16 +21,43 @@ NY_clean <- NY |>
          # finding number of days the host has been a host
          days_since_host_joined = as.numeric(last_scraped - host_since)) |> 
   # unslecting the dates
-  select(!c(host_since, last_scraped))
+  select(!c(host_since, last_scraped)) |> 
+  # Filtering for prices between $50 and $1000
+  filter(price >= 50, 
+         price <= 1000)
+
+# Price is right-skewed; let's apply the log transformation
+# Prices BEFORE LOG
+NY_clean |> 
+  ggplot(aes(x = price)) +
+  geom_histogram(fill = "steelblue", col = "black") +
+  labs(title = "Price: Before LOG Transformation",
+       x = "Price",
+       y = "Count") +
+  regression_theme()
+
+# Prices AFTER LOG
+NY_clean |> 
+  ggplot(aes(x = log(price))) +
+  geom_histogram(fill = "steelblue", col = "black") +
+  labs(title = "Price: After LOG Transformation",
+       x = "LOG(Price)",
+       y = "Count") +
+  regression_theme()
+
+
+# Transforming the data so that price is the natural log
+NY_transformed <- NY_clean |> 
+  mutate(lnPRICE = log(price))
 
 # Structure
-str(NY_clean)
+str(NY_transformed)
 
 # Summary of categorical 
-summary(NY_clean[ , c(2, 4, 5)])
+summary(NY_transformed[ , c(2, 4, 5)])
 
 # Summary of numeric
-sapply(NY_clean[, c(1, 3, 6:13)], function(x) c(summary = summary(x), sd = sd(x)))
+sapply(NY_transformed[, c(1, 3, 6:14)], function(x) c(summary = summary(x), sd = sd(x)))
 
 
 # Visualizations ----------------------------------------------------------
@@ -50,24 +77,6 @@ regression_theme <- function() {
                                   face = "bold")
     )
 }
-
-# Prices BEFORE LOG
-NY_clean |> 
-  ggplot(aes(x = price)) +
-  geom_histogram(fill = "steelblue", col = "black") +
-  labs(title = "Price: Before LOG Transformation",
-       x = "Price",
-       y = "Count") +
-  regression_theme()
-
-# Prices AFTER LOG
-NY_clean |> 
-  ggplot(aes(x = log(price))) +
-  geom_histogram(fill = "steelblue", col = "black") +
-  labs(title = "Price: After LOG Transformation",
-       x = "LOG(Price)",
-       y = "Count") +
-  regression_theme()
 
 # Accomodates
 NY_clean |> 
@@ -147,10 +156,6 @@ NY_clean |>
   labs(x = "Review Scores Ratings",
        y = "Count") +
   regression_theme()
-
-# Transforming the data
-NY_transformed <- NY_clean |> 
-  mutate(lnPRICE = log(price))
 
 # Scatterplot matrix
 pairs(~calculated_host_listings_count + accommodates + bathrooms + bedrooms + beds + minimum_nights + number_of_reviews +
