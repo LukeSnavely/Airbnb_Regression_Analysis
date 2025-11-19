@@ -1,16 +1,34 @@
 # Loading in packages
 library(tidyverse)
 library(gt)
+library(MASS)
 
 # Loading in the data
 NY <- read_csv("data/NY_AIRBNB.csv")
+
+# Creating a themeing function, so we don't have to keep typing out our themes
+regression_theme <- function() {
+  theme_bw() +
+    theme(
+      plot.title = element_text(size = 18,
+                                face = "bold",
+                                hjust = .5),
+      axis.title = element_text(size = 15,
+                                face = "bold",
+                                hjust = .5),
+      legend.title = element_text(size = 15,
+                                  face = "bold")
+    )
+}
+
+# Data cleaning -----------------------------------------------------------
 
 # Clean version of data with selected variables
 NY_clean <- NY |> 
   # We are predicting price, so no NAs
   filter(!is.na(price)) |> 
   # Selecting desired variables
-  select(price, host_is_superhost, last_scraped, host_since,
+  dplyr::select(price, host_is_superhost, last_scraped, host_since,
          calculated_host_listings_count, neighbourhood_group_cleansed,
          room_type, accommodates, bathrooms, bedrooms,
          beds, minimum_nights, number_of_reviews, review_scores_rating) |> 
@@ -20,11 +38,13 @@ NY_clean <- NY |>
   mutate(price = round(as.numeric(gsub("[$,]", "", price)), 2),
          # finding number of days the host has been a host
          days_since_host_joined = as.numeric(last_scraped - host_since)) |> 
+  # Getting rid of Shared Room and Hotel Room due to low observations
+  filter(room_type %in% c("Entire home/apt", "Private room")) |> 
   # unslecting the dates
-  select(!c(host_since, last_scraped)) |> 
-  # Filtering for prices between $50 and $1000
-  filter(price >= 50, 
-         price <= 1000)
+  dplyr::select(!c(host_since, last_scraped)) |> 
+  # Filtering for prices between $25 and $1000
+  filter(price >= 50,
+         price <= 500)
 
 # Price is right-skewed; let's apply the log transformation
 # Prices BEFORE LOG
@@ -48,7 +68,10 @@ NY_clean |>
 
 # Transforming the data so that price is the natural log
 NY_transformed <- NY_clean |> 
-  mutate(lnPRICE = log(price))
+  mutate(lnPRICE = log(price),
+         lnHOST_LISTINGS = log(calculated_host_listings_count + 1),
+         lnMINIMUM_NIGHTS = log(minimum_nights + 1),
+         lnREVIEWS = log(number_of_reviews + 1))
 
 # Structure
 str(NY_transformed)
@@ -60,23 +83,8 @@ summary(NY_transformed[ , c(2, 4, 5)])
 sapply(NY_transformed[, c(1, 3, 6:14)], function(x) c(summary = summary(x), sd = sd(x)))
 
 
-# Visualizations ----------------------------------------------------------
+# EDA: Visualizations ----------------------------------------------------------
 
-
-# Creating a theming function, so we don't have to keep typing out our themes
-regression_theme <- function() {
-  theme_bw() +
-    theme(
-      plot.title = element_text(size = 18,
-                                face = "bold",
-                                hjust = .5),
-      axis.title = element_text(size = 15,
-                                face = "bold",
-                                hjust = .5),
-      legend.title = element_text(size = 15,
-                                  face = "bold")
-    )
-}
 
 # Accomodates
 NY_clean |> 
@@ -162,14 +170,15 @@ pairs(~calculated_host_listings_count + accommodates + bathrooms + bedrooms + be
         review_scores_rating + days_since_host_joined + lnPRICE, 
       data = NY_transformed, upper.panel = NULL, gap = 0)
 
-# Correlation
+# Correlations
 cors <- round(cor(NY_transformed[ , c("calculated_host_listings_count", "accommodates", "bathrooms", 
                                       "bedrooms", "beds", "minimum_nights", "number_of_reviews", "review_scores_rating",
                                       "days_since_host_joined", "lnPRICE")]),3)[10, ]
 
-# Put in a data frame
+# Putting correlations in a df
 correlations <- data.frame(Variable = names(cors), Correlation = as.numeric(cors))
 
+# Making a gt table of correlations
 correlations |> 
   filter(Variable != "lnPRICE") |> 
   gt() |> 
@@ -177,6 +186,7 @@ correlations |>
   gtsave("Correlations.png")
 
 # Categorical Variable Analysis
+# Neighborhood group
 NY_transformed |> 
   ggplot(aes(x = lnPRICE, fill = neighbourhood_group_cleansed)) +
   geom_histogram(col = "black") +
@@ -209,6 +219,50 @@ NY_transformed |>
        x = "LOG of Price",
        y = "Count")
 
-# Example of categorical regression
-lm <- lm(lnPRICE ~ neighbourhood_group_cleansed, data = NY_transformed)
-summary(lm)
+
+
+# Modeling ----------------------------------------------------------------
+
+# Removing vars from the model to only have ln vars
+model_data <- NY_transformed |> 
+  dplyr::select(!c(price, number_of_reviews, calculated_host_listings_count, minimum_nights)) |> 
+  filter(bathrooms < 10)
+  
+
+# Sampling 5000 rows
+set.seed(412)
+model_data <- model_data[sample(nrow(model_data), 5000, replace = FALSE), ]
+
+
+# Full Model
+model_full <- lm(lnPRICE ~ ., data = model_data)
+
+# Null Model
+model_null <- lm(lnPRICE ~ 1, data = model_data)
+
+# Correlation matrix
+pairs(~  accommodates + bathrooms + bedrooms + beds + review_scores_rating + days_since_host_joined + lnHOST_LISTINGS + lnMINIMUM_NIGHTS + lnREVIEWS + lnPRICE, data = model_data, upper.panel = NULL, gap = 0)
+
+# Forward Selection with BIC as comparison
+stepAIC(model_null, 
+        # goes from null model to full model
+        scope = list(lower = model_null, upper = model_full), 
+        # k = log(nrow(model_data)) --> BIC (constant in the BIC formula)
+        k = log(nrow(model_data)), 
+        # Forward selection
+        direction = "forward")
+
+# Forward and Backward Selection
+model_complete <- lm(formula = lnPRICE ~ accommodates + neighbourhood_group_cleansed + 
+                               lnMINIMUM_NIGHTS + room_type + lnHOST_LISTINGS + bedrooms + 
+                               review_scores_rating + host_is_superhost + bathrooms + days_since_host_joined, 
+                             data = model_data)
+
+summary(model_complete)
+plot(model_complete)
+
+# Simple model
+model_simple <- lm(lnPRICE ~ accommodates + neighbourhood_group_cleansed + bedrooms + lnMINIMUM_NIGHTS, data = model_data)
+
+plot(model_simple)
+summary(model_simple)

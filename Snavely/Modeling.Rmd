@@ -1,0 +1,111 @@
+---
+title: "Modeling"
+output: html_document
+---
+
+```{r}
+# Loading in packages
+library(tidyverse)
+library(gt)
+library(MASS)
+
+# Loading in the data
+NY <- read_csv("NY_AIRBNB.csv")
+```
+
+
+## Data Cleaning
+```{r}
+# Clean version of data with selected variables
+NY_clean <- NY |> 
+  # We are predicting price, so no NAs
+  filter(!is.na(price)) |> 
+  # Selecting desired variables
+  dplyr::select(price, host_is_superhost, last_scraped, host_since,
+         calculated_host_listings_count, neighbourhood_group_cleansed,
+         room_type, accommodates, bathrooms, bedrooms,
+         beds, minimum_nights, number_of_reviews, review_scores_rating) |> 
+  # Removing any other NAs
+  na.omit() |> 
+  # Turning price into a numeric variable
+  mutate(price = round(as.numeric(gsub("[$,]", "", price)), 2),
+         # finding number of days the host has been a host
+         days_since_host_joined = as.numeric(last_scraped - host_since)) |> 
+  # Getting rid of Shared Room and Hotel Room due to low observations
+  filter(room_type %in% c("Entire home/apt", "Private room")) |> 
+  # deselecting the dates
+  dplyr::select(!c(host_since, last_scraped)) |> 
+  # Filtering for prices between $50 and $500
+  filter(price >= 50,
+         price <= 500)
+
+# Transformations of natural logs
+NY_transformed <- NY_clean |> 
+  mutate(lnPRICE = log(price),
+         lnHOST_LISTINGS = log(calculated_host_listings_count + 1),
+         lnMINIMUM_NIGHTS = log(minimum_nights + 1),
+         lnREVIEWS = log(number_of_reviews + 1))
+```
+
+<br>
+
+# Modeling
+
+## Modeling Setup
+```{r}
+# Removing vars from the model to only have ln vars
+model_data <- NY_transformed |> 
+  dplyr::select(!c(price, number_of_reviews, calculated_host_listings_count, minimum_nights)) |> 
+  filter(bathrooms < 10)
+
+# Sampling 5000 rows
+set.seed(412)
+model_data <- model_data[sample(nrow(model_data), 5000, replace = FALSE), ]
+
+summary(model_data)
+str(model_data)
+  
+# Correlation matrix
+pairs(~  accommodates + bathrooms + bedrooms + beds + review_scores_rating + days_since_host_joined + lnHOST_LISTINGS + lnMINIMUM_NIGHTS + lnREVIEWS + lnPRICE, data = model_data, upper.panel = NULL, gap = 0)
+```
+
+## Forward Selection using BIC
+```{r}
+# Full Model
+model_full <- lm(lnPRICE ~ ., data = model_data)
+
+# Null Model
+model_null <- lm(lnPRICE ~ 1, data = model_data)
+
+# Correlation matrix
+pairs(~  accommodates + bathrooms + bedrooms + beds + review_scores_rating + days_since_host_joined + lnHOST_LISTINGS + lnMINIMUM_NIGHTS + lnREVIEWS + lnPRICE, data = model_data, upper.panel = NULL, gap = 0)
+
+# Forward Selection with BIC as comparison
+stepAIC(model_null, 
+        # goes from null model to full model
+        scope = list(lower = model_null, upper = model_full), 
+        # k = log(nrow(model_data)) --> BIC (constant in the BIC formula)
+        k = log(nrow(model_data)), 
+        # Forward selection
+        direction = "forward")
+
+# Forward and Backward Selection
+model_complete <- lm(formula = lnPRICE ~ accommodates + neighbourhood_group_cleansed + 
+                               lnMINIMUM_NIGHTS + room_type + lnHOST_LISTINGS + bedrooms + 
+                               review_scores_rating + host_is_superhost + bathrooms + days_since_host_joined, 
+                             data = model_data)
+
+summary(model_complete)
+plot(model_complete)
+```
+
+
+## Simple Model
+```{r}
+# Simple model
+model_simple <- lm(lnPRICE ~ accommodates + neighbourhood_group_cleansed + bedrooms + lnMINIMUM_NIGHTS, data = model_data)
+
+plot(model_simple)
+summary(model_simple)
+```
+
