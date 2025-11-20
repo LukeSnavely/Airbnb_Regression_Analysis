@@ -3,7 +3,7 @@ title: "Modeling"
 output: html_document
 ---
 
-```{r}
+```{r, echo = FALSE}
 # Loading in packages
 library(tidyverse)
 library(gt)
@@ -11,11 +11,29 @@ library(MASS)
 
 # Loading in the data
 NY <- read_csv("NY_AIRBNB.csv")
+
+# Creating a themeing function, so we don't have to keep typing out our themes
+regression_theme <- function() {
+  theme_bw() +
+    theme(
+      plot.title = element_text(size = 18,
+                                face = "bold",
+                                hjust = .5),
+      axis.title = element_text(size = 15,
+                                face = "bold",
+                                hjust = .5),
+      legend.title = element_text(size = 15,
+                                  face = "bold"),
+      plot.subtitle = element_text(size = 16,
+                                   face = "italic",
+                                   hjust = .5)
+    )
+}
 ```
 
 
 ## Data Cleaning
-```{r}
+```{r, fig.height = 6, fig.width = 6}
 # Clean version of data with selected variables
 NY_clean <- NY |> 
   # We are predicting price, so no NAs
@@ -49,6 +67,54 @@ NY_transformed <- NY_clean |>
 
 <br>
 
+## Visuals
+### LOG Transformations
+```{r, fig.height = 6, fig.width = 6}
+# Histogram of Price before and after log transformation
+NY_transformed |> 
+  ggplot(aes(x = price)) +
+  geom_histogram(fill = "steelblue", col = "black") +
+  labs(title = "Price: Before LOG Transformation",
+       x = "Price",
+       y = "Count",
+       subtitle = "Graph displays distribution before 5000 sample") +
+  regression_theme()
+
+# Prices AFTER LOG
+NY_transformed |> 
+  ggplot(aes(x = log(price))) +
+  geom_histogram(fill = "steelblue", col = "black") +
+  labs(title = "Price: After LOG Transformation",
+       x = "LOG(Price)",
+       y = "Count",
+      subtitle = "Graph displays distribution before 5000 sample") +
+  regression_theme()
+```
+
+### Correlation Table
+```{r}
+# Correlations
+## Note: make sure to run model_data in the next code chunk first
+cors <- round(cor(model_data[ , c("accommodates", "bathrooms",
+                                      "bedrooms", "beds", "lnMINIMUM_NIGHTS", "lnHOST_LISTINGS", "lnREVIEWS", 
+                                      "review_scores_rating", "days_since_host_joined", "lnPRICE")]),3)[10, ]
+
+# Putting correlations in a df
+correlations <- data.frame(Variable = names(cors), Correlation = as.numeric(cors))
+
+# Making a gt table of correlations
+correlations |> 
+  filter(Variable != "lnPRICE") |> 
+  gt() |> 
+  tab_header(title = md("**Correlations with lnPRICE**")) |> 
+  gtsave("Correlations.png")
+
+# Scatterplot matrix
+pairs(~  accommodates + bathrooms + bedrooms + beds + review_scores_rating + days_since_host_joined + lnHOST_LISTINGS + lnMINIMUM_NIGHTS + lnREVIEWS + lnPRICE, data = model_data, upper.panel = NULL, gap = 0)
+```
+
+<br>
+
 # Modeling
 
 ## Modeling Setup
@@ -64,16 +130,16 @@ model_data <- model_data[sample(nrow(model_data), 5000, replace = FALSE), ]
 
 summary(model_data)
 str(model_data)
-  
-# Correlation matrix
-pairs(~  accommodates + bathrooms + bedrooms + beds + review_scores_rating + days_since_host_joined + lnHOST_LISTINGS + lnMINIMUM_NIGHTS + lnREVIEWS + lnPRICE, data = model_data, upper.panel = NULL, gap = 0)
+```
+
+## Full Model
+```{r}
+model_full <- lm(lnPRICE ~ ., data = model_data)
+summary(model_full)
 ```
 
 ## Forward Selection using BIC
-```{r}
-# Full Model
-model_full <- lm(lnPRICE ~ ., data = model_data)
-
+```{r, fig.height = 4, fig.width = 6}
 # Null Model
 model_null <- lm(lnPRICE ~ 1, data = model_data)
 
@@ -99,13 +165,47 @@ summary(model_complete)
 plot(model_complete)
 ```
 
-
 ## Simple Model
-```{r}
+```{r, fig.height = 4, fig.width = 6}
 # Simple model
 model_simple <- lm(lnPRICE ~ accommodates + neighbourhood_group_cleansed + bedrooms + lnMINIMUM_NIGHTS, data = model_data)
 
 plot(model_simple)
 summary(model_simple)
+```
+
+<br>
+
+# Analysis
+## Residuals vs. Response Variable lnPRICE
+```{r, fig.height = 4, fig.width = 6}
+# Resisduals vs. lnPRICE
+# Complete Model
+model_data |> 
+  ggplot(aes(x = lnPRICE, y = model_complete$residuals)) +
+  geom_point() +
+  regression_theme() +
+  labs(x = "LOG(Price)",
+       y = "Complete Model Residuals")
+
+# Simple Model
+model_data |> 
+  ggplot(aes(x = lnPRICE, y = model_simple$residuals)) +
+  geom_point() +
+  regression_theme() +
+  labs(x = "LOG(Price)",
+       y = "Simple Model Residuals")
+```
+
+## Collinearity
+```{r}
+# Using the VIF function from the car package to minimize time to find VIF for each var
+library(car)
+
+# Complete model
+vif(model_complete)
+
+# Simple model
+vif(model_simple)
 ```
 
