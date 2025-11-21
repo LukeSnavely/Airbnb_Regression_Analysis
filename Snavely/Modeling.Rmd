@@ -91,6 +91,17 @@ NY_transformed |>
   regression_theme()
 ```
 
+### Data Table
+```{r}
+# Example data for modeling
+NY_clean |> 
+  dplyr::select(price, accommodates, beds, bedrooms, bathrooms, neighbourhood_group_cleansed, room_type) |> 
+  slice_head(n = 3) |> 
+  gt() |> 
+  gtExtras::gt_theme_espn() |> 
+  gtsave("Exampledata.png")
+```
+
 ### Correlation Table
 ```{r}
 # Correlations
